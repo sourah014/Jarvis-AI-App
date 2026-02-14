@@ -75,8 +75,8 @@ try:
     else:
         REDIRECT_URI = "http://localhost:8503"
 except FileNotFoundError:
-    REDIRECT_URI = "http://localhost:8503"
-    
+    REDIRECT_URI = st.secrets.get("REDIRECT_URI", "http://localhost:8503")
+
 # Google Endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
