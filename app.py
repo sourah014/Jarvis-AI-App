@@ -66,7 +66,6 @@ if current_session_id and not st.session_state.user_email:
         st.session_state.token = user_data["token"]
 
 # --- GOOGLE AUTH CONFIG ---
-# Secrets se Client ID aur Secret uthao, nahi toh Environment variables se
 if "GOOGLE_CLIENT_ID" in st.secrets:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
 else:
@@ -77,9 +76,7 @@ if "GOOGLE_CLIENT_SECRET" in st.secrets:
 else:
     CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# --- SMART REDIRECT URI (FINAL FIX) ---
-# Logic: Pehle Streamlit Secrets check karega (Live ke liye).
-# Agar wahan nahi mila, toh Localhost use karega.
+# --- SMART REDIRECT URI ---
 try:
     if "REDIRECT_URI" in st.secrets:
         REDIRECT_URI = st.secrets["REDIRECT_URI"]
@@ -108,8 +105,13 @@ with st.sidebar:
 if not st.session_state.user_email:
     st.title("🤖 Jarvis AI - Secure Access")
     
-    # Debugging Line (Error aane par ye bata dega ki code kaunsa link use kar raha hai)
-    # st.write(f"Debug Info: Using Redirect URI: `{REDIRECT_URI}`") 
+    # ================= DEBUGGING BOX (START) =================
+    st.error("🛑 STOP & CHECK THIS (DEBUG MODE)")
+    st.write("Niche diye gaye URL ko dhyan se dekho. Kya ye EXACTLY wahi hai jo Google Cloud mein hai?")
+    st.code(f"REDIRECT_URI = {REDIRECT_URI}")
+    st.code(f"CLIENT_ID = {CLIENT_ID}")
+    st.warning("Agar upar 'localhost' likha hai, toh Secrets load nahi ho rahe. Agar link sahi hai par Error 403 hai, toh Google Cloud mein '/' ka fark hai.")
+    # ================= DEBUGGING BOX (END) =================
 
     query_params = st.query_params
     auth_code = query_params.get("code")
@@ -143,8 +145,8 @@ if not st.session_state.user_email:
                     st.error("❌ Email nahi mila.")
             else:
                 st.error("⚠️ Login Failed.")
-                st.write("Google Error:", token_response.json())
-                st.write(f"Check REDIRECT_URI config. Code sent: `{REDIRECT_URI}`")
+                st.write("Google Error Response:", token_response.json())
+                st.write(f"Code sent Redirect URI: `{REDIRECT_URI}`")
                 st.stop()
         except Exception as e:
             st.error(f"Error: {e}")
