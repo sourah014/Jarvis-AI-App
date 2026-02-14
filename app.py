@@ -1,104 +1,234 @@
 import streamlit as st
 import os
 import time
+import json
+import base64
+import requests  # <-- Hum ab khud request bhejenge
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-import backend # Hamara logic file
+import backend 
+import uuid
 
+# 1. Env Load
 load_dotenv()
+# --- SESSION PERSISTENCE LOGIC (Refresh Fix) ---
+SESSION_FILE = "active_sessions.json"
 
-# --- MAINTENANCE MODE CHECK ---
-# Environment variable se check karega ki app maintenance mein hai ya nahi
-is_maintenance = os.getenv("MAINTENANCE_MODE", "False").lower() == "true"
+def save_session_to_file(session_id, user_data):
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, "r") as f:
+            sessions = json.load(f)
+    else:
+        sessions = {}
+    sessions[session_id] = user_data
+    with open(SESSION_FILE, "w") as f:
+        json.dump(sessions, f)
 
-if is_maintenance:
+def get_session_from_file(session_id):
+    if not os.path.exists(SESSION_FILE):
+        return None
+    with open(SESSION_FILE, "r") as f:
+        sessions = json.load(f)
+    return sessions.get(session_id)
+
+def logout_session(session_id):
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, "r") as f:
+            sessions = json.load(f)
+        if session_id in sessions:
+            del sessions[session_id]
+            with open(SESSION_FILE, "w") as f:
+                json.dump(sessions, f)
+
+# --- MAINTENANCE MODE ---
+if os.getenv("MAINTENANCE_MODE", "False").lower() == "true":
     st.title("🚧 App under Maintenance")
-    st.subheader("Bhai, hum kuch naya update kar rahe hain!")
-    st.info("Jarvis thodi der mein wapas aayega. Tab tak chai pi lo! ☕")
-    st.stop() # Ye niche ka saara code block kar dega
+    st.stop()
 
-# Page setting
+# Page Setup
 st.set_page_config(page_title="Jarvis Pro", page_icon="🤖", layout="wide")
 
-# --- SIDEBAR: NEW CHAT & HISTORY ---
+# --- SESSION STATE INITIALIZATION ---
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+
+# --- AUTO-LOGIN CHECK ---
+query_params = st.query_params
+current_session_id = query_params.get("session")
+
+if current_session_id and not st.session_state.user_email:
+    user_data = get_session_from_file(current_session_id)
+    if user_data:
+        st.session_state.user_email = user_data["email"]
+        st.session_state.token = user_data["token"]
+
+# --- GOOGLE AUTH CONFIG (Manual Mode) ---
+CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = "http://localhost:8503"  # <--- Check your Browser URL! Agar 8501 hai toh yahan change karo.
+
+# Google Endpoints
+AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+USER_INFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
+
+# --- SIDEBAR (Logout) ---
 with st.sidebar:
+    if st.session_state.user_email:
+        st.write(f"👤 **{st.session_state.user_email}**")
+        if st.button("🔒 Logout", type="primary"):
+            if 'current_session_id' in locals() and current_session_id:
+                logout_session(current_session_id)
+            st.session_state.clear()
+            st.query_params.clear()
+            st.rerun()
+
+# --- MANUAL LOGIN FLOW ---
+if not st.session_state.user_email:
+    st.title("🤖 Jarvis AI - Secure Access")
+    
+    # 1. Check: Kya URL mein 'code' aaya hai? (Matlab Google se wapas aaye ho?)
+    query_params = st.query_params
+    auth_code = query_params.get("code")
+
+    if auth_code:
+        st.info("🔄 Connecting to Google... (Do not refresh)")
+        
+        # 2. Token Exchange (Manual Request)
+        try:
+            payload = {
+                "code": auth_code,
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "redirect_uri": REDIRECT_URI,
+                "grant_type": "authorization_code",
+            }
+            
+            # Seedha Google ko POST request bhejo
+            token_response = requests.post(TOKEN_URL, data=payload)
+            
+            if token_response.status_code == 200:
+                # Success! Token mil gaya
+                tokens = token_response.json()
+                access_token = tokens["access_token"]
+                
+                # 3. User Info Nikalo
+                user_info = requests.get(
+                    USER_INFO_URL, 
+                    headers={"Authorization": f"Bearer {access_token}"}
+                ).json()
+                
+                email = user_info.get("email")
+                
+                if email:
+                    # Login Complete!
+                    st.session_state.user_email = email
+                    st.session_state.token = tokens
+                    new_session_id = str(uuid.uuid4())
+                    save_session_to_file(new_session_id, {"email": email, "token": tokens})
+                    st.query_params["session"] = new_session_id
+                    # # URL saaf karo taaki code reuse na ho
+                    # st.query_params.clear()
+                    st.rerun()
+                
+                else:
+                    st.error("❌ Email nahi mila. Try again.")
+            else:
+                # Agar Google ne mana kiya (e.g. URI Mismatch)
+                error_details = token_response.json()
+                st.error(f"⚠️ Google Error: {error_details.get('error_description')}")
+                st.write(f"Check REDIRECT_URI config. Code expects: `{REDIRECT_URI}`")
+                st.stop()
+                
+        except Exception as e:
+            st.error(f"Connection Error: {e}")
+            st.stop()
+            
+    else:
+        # 3. Agar 'code' nahi hai, toh Login Link dikhao
+        # Hum button ki jagah Link use karenge taaki koi script na atke
+        auth_link = f"{AUTH_URL}?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope=openid%20email%20profile&access_type=offline&prompt=consent"
+        
+        st.markdown(f'''
+            <a href="{auth_link}" target="_self">
+                <button style="
+                    background-color: #4285F4; 
+                    color: white; 
+                    padding: 12px 24px; 
+                    border: none; 
+                    border-radius: 4px; 
+                    font-size: 16px; 
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;">
+                    <img src="https://www.google.com/favicon.ico" width="20"/>
+                    Login with Google
+                </button>
+            </a>
+            ''', unsafe_allow_html=True)
+            
+    st.stop()
+
+# =========================================================
+# APP CONTENT (SIRF LOGGED IN USER KE LIYE)
+# =========================================================
+
+user_email = st.session_state.user_email
+username = user_email 
+
+# Sidebar Features
+with st.sidebar:
+    st.markdown("---")
     st.title("🤖 Jarvis AI")
     
-    # Nayi Chat shuru karne ka button
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.current_chat = f"Chat_{int(time.time())}.json"
-        st.session_state.chat_history = [SystemMessage(content="You are Jarvis, a helpful AI.")]
+        st.session_state.chat_history = [SystemMessage(content="You are Jarvis.")]
         st.rerun()
 
-    st.markdown("---")
-    st.subheader("📜 Recent Chats")
+    st.subheader("📜 Your Chats")
     
-    # Saari purani chats ki list
-    sessions = backend.get_all_chat_sessions()
-    
+    sessions = backend.get_all_chat_sessions(username)
+    if not sessions:
+        st.info("No chats yet.")
+        
     for s in sessions:
-        # Display name ko saaf karna (Numbers hatao)
         display_name = s.replace(".json", "")
         if "_" in display_name:
             parts = display_name.split("_")
-            if parts[-1].isdigit():
-                display_name = " ".join(parts[:-1])
-            else:
-                display_name = display_name.replace("_", " ")
-        else:
-            display_name = display_name.replace("_", " ")
-
-        if len(display_name) > 20:
-            display_name = display_name[:18] + "..."
-
-        # --- DELETE LOGIC STARTS HERE ---
-        # Do columns banaye: ek chat load ke liye, ek delete ke liye
-        col1, col2 = st.columns([0.85, 0.15])
+            if parts[-1].isdigit(): display_name = " ".join(parts[:-1])
         
+        col1, col2 = st.columns([0.80, 0.20])
         with col1:
-            # Chat load karne ka button
-            if st.button(display_name, key=f"load_{s}", use_container_width=True):
+            if st.button(display_name[:15], key=f"load_{s}", use_container_width=True):
                 st.session_state.current_chat = s
-                st.session_state.chat_history = backend.load_chat_session(s)
+                st.session_state.chat_history = backend.load_chat_session(username, s)
                 st.rerun()
-        
         with col2:
-            # Delete karne ka button (Chhota 🗑️ icon)
-            if st.button("🗑️", key=f"del_{s}", help="Delete this chat"):
-                backend.delete_chat_session(s)
-                # Agar wahi chat delete ki jo khuli hui hai, toh reset kar do
-                if st.session_state.get('current_chat') == s:
-                    st.session_state.current_chat = f"Chat_{int(time.time())}.json"
-                    st.session_state.chat_history = [SystemMessage(content="You are Jarvis.")]
+            if st.button("🗑️", key=f"del_{s}"):
+                backend.delete_chat_session(username, s)
                 st.rerun()
-        # --------------------------------
 
     st.markdown("---")
-    provider = st.radio("Model:", ("DeepSeek-R1 (Logic) 🧠", "Llama-3.3 (Fast) ⚡"))
+    provider = st.radio("Model:", ("Llama-3.3 (Fast) ⚡", "DeepSeek-R1 (Groq) 🧠"))
     api_key = os.getenv("GROQ_API_KEY")
 
-# --- MAIN CHAT LOGIC ---
-
+# Chat Interface
 if "current_chat" not in st.session_state:
     st.session_state.current_chat = f"Chat_{int(time.time())}.json"
-    st.session_state.chat_history = [SystemMessage(content="You are Jarvis, a helpful AI.")]
+    st.session_state.chat_history = [SystemMessage(content="You are Jarvis.")]
 
-st.title(f"Jarvis AI - {provider}")
+st.title(f"Jarvis 🧠 | {user_email}")
 
-# History dikhao
-for message in st.session_state.chat_history:
-    if not isinstance(message, SystemMessage):
-        role = "user" if isinstance(message, HumanMessage) else "assistant"
-        with st.chat_message(role):
-            st.markdown(message.content)
+for msg in st.session_state.chat_history:
+    if not isinstance(msg, SystemMessage):
+        with st.chat_message("user" if isinstance(msg, HumanMessage) else "assistant"):
+            st.markdown(msg.content)
 
-# User Input
-user_input = st.chat_input("Ask Jarvis anything...")
-
-if user_input:
-    with st.chat_message("user"):
-        st.markdown(user_input)
-    st.session_state.chat_history.append(HumanMessage(content=user_input))
+if prompt := st.chat_input("Ask Jarvis anything..."):
+    st.session_state.chat_history.append(HumanMessage(content=prompt))
+    with st.chat_message("user"): st.markdown(prompt)
     
     llm = backend.get_llm(provider, api_key)
     try:
@@ -109,16 +239,12 @@ if user_input:
                 st.markdown(ai_msg)
         
         st.session_state.chat_history.append(AIMessage(content=ai_msg))
-
-        # Smart Rename Logic
+        
+        backend.save_chat_session(username, st.session_state.current_chat, st.session_state.chat_history)
+        
         if "Chat_" in st.session_state.current_chat:
-            backend.save_chat_session(st.session_state.current_chat, st.session_state.chat_history)
-            new_name = backend.rename_chat_session(st.session_state.current_chat, user_input)
+            new_name = backend.rename_chat_session(username, st.session_state.current_chat, prompt)
             st.session_state.current_chat = new_name
-        else:
-            backend.save_chat_session(st.session_state.current_chat, st.session_state.chat_history)
-        
         st.rerun()
-        
     except Exception as e:
         st.error(f"Error: {e}")

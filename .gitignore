@@ -1,4 +1,3 @@
 .env
-all_chats/
 __pycache__/
-*.json
+active_sessions.json
