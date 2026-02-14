@@ -65,24 +65,21 @@ if current_session_id and not st.session_state.user_email:
         st.session_state.user_email = user_data["email"]
         st.session_state.token = user_data["token"]
 
-# --- GOOGLE AUTH CONFIG ---
-if "GOOGLE_CLIENT_ID" in st.secrets:
+# --- GOOGLE AUTH CONFIG (SAFE MODE) ---
+# Yahan maine try-except lagaya hai taaki Localhost par crash na ho
+try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
-else:
-    CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-
-if "GOOGLE_CLIENT_SECRET" in st.secrets:
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
-else:
+except Exception:
+    # Agar Secrets nahi mile (Localhost), toh .env se uthao
+    CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
 # --- SMART REDIRECT URI ---
 try:
-    if "REDIRECT_URI" in st.secrets:
-        REDIRECT_URI = st.secrets["REDIRECT_URI"]
-    else:
-        REDIRECT_URI = "http://localhost:8503"
-except FileNotFoundError:
+    REDIRECT_URI = st.secrets["REDIRECT_URI"]
+except Exception:
+    # Agar Secrets nahi mile (Localhost), toh Localhost use karo
     REDIRECT_URI = "http://localhost:8503"
 
 # Google Endpoints
@@ -106,12 +103,12 @@ if not st.session_state.user_email:
     st.title("🤖 Jarvis AI - Secure Access")
     
     # ================= DEBUGGING BOX (START) =================
-    st.error("🛑 STOP & CHECK THIS (DEBUG MODE)")
-    st.write("Niche diye gaye URL ko dhyan se dekho. Kya ye EXACTLY wahi hai jo Google Cloud mein hai?")
-    st.code(f"REDIRECT_URI = {REDIRECT_URI}")
-    st.code(f"CLIENT_ID = {CLIENT_ID}")
-    st.warning("Agar upar 'localhost' likha hai, toh Secrets load nahi ho rahe. Agar link sahi hai par Error 403 hai, toh Google Cloud mein '/' ka fark hai.")
-    # ================= DEBUGGING BOX (END) =================
+    # Ye box sirf tab dikhega jab zaroorat ho, Live par check karne ke liye
+    if "localhost" not in REDIRECT_URI: 
+        st.error("🛑 DEBUG MODE (LIVE)")
+        st.code(f"REDIRECT_URI = {REDIRECT_URI}")
+        st.info("Agar 403 aa raha hai, toh Google Cloud me 'Testing' mode on karo.")
+    # =========================================================
 
     query_params = st.query_params
     auth_code = query_params.get("code")
@@ -217,9 +214,13 @@ with st.sidebar:
     st.markdown("---")
     provider = st.radio("Model:", ("Llama-3.3 (Fast) ⚡", "DeepSeek-R1 (Groq) 🧠"))
     
-    if "GROQ_API_KEY" in st.secrets:
-        api_key = st.secrets["GROQ_API_KEY"]
-    else:
+    # Safe API Key Load
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            api_key = st.secrets["GROQ_API_KEY"]
+        else:
+            api_key = os.getenv("GROQ_API_KEY")
+    except Exception:
         api_key = os.getenv("GROQ_API_KEY")
 
 if "current_chat" not in st.session_state:
