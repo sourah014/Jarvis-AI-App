@@ -65,8 +65,18 @@ if current_session_id and not st.session_state.user_email:
 # --- GOOGLE AUTH CONFIG (Manual Mode) ---
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "http://localhost:8503"  # <--- Check your Browser URL! Agar 8501 hai toh yahan change karo.
-
+# REDIRECT_URI = "http://localhost:8503"  # <--- Check your Browser URL! Agar 8501 hai toh yahan change karo.
+# --- SMART REDIRECT URI (Auto-Detect) ---
+# Agar Streamlit Cloud par "Secrets" set hain, toh wahan se URL lega.
+# Agar nahi, toh Localhost manega.
+try:
+    if "REDIRECT_URI" in st.secrets:
+        REDIRECT_URI = st.secrets["REDIRECT_URI"]
+    else:
+        REDIRECT_URI = "http://localhost:8503"
+except FileNotFoundError:
+    REDIRECT_URI = "http://localhost:8503"
+    
 # Google Endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
