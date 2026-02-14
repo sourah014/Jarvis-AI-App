@@ -1,3 +1,4 @@
 .env
 __pycache__/
 active_sessions.json
+all_chats/
