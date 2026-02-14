@@ -66,18 +66,26 @@ if current_session_id and not st.session_state.user_email:
         st.session_state.token = user_data["token"]
 
 # --- GOOGLE AUTH CONFIG ---
-CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+# Secrets se Client ID aur Secret uthao, nahi toh Environment variables se
+if "GOOGLE_CLIENT_ID" in st.secrets:
+    CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
+else:
+    CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
-# --- SMART REDIRECT URI (The Fix) ---
-# Logic: Agar Secrets mein Live Link mila toh wo use karega, nahi toh Localhost.
+if "GOOGLE_CLIENT_SECRET" in st.secrets:
+    CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+else:
+    CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+
+# --- SMART REDIRECT URI (FINAL FIX) ---
+# Logic: Pehle Streamlit Secrets check karega (Live ke liye).
+# Agar wahan nahi mila, toh Localhost use karega.
 try:
     if "REDIRECT_URI" in st.secrets:
         REDIRECT_URI = st.secrets["REDIRECT_URI"]
     else:
         REDIRECT_URI = "http://localhost:8503"
-except Exception:
-    # Agar local PC par secrets file nahi hai, toh ye error dega, isliye fallback rakha hai
+except FileNotFoundError:
     REDIRECT_URI = "http://localhost:8503"
 
 # Google Endpoints
@@ -100,6 +108,9 @@ with st.sidebar:
 if not st.session_state.user_email:
     st.title("🤖 Jarvis AI - Secure Access")
     
+    # Debugging Line (Error aane par ye bata dega ki code kaunsa link use kar raha hai)
+    # st.write(f"Debug Info: Using Redirect URI: `{REDIRECT_URI}`") 
+
     query_params = st.query_params
     auth_code = query_params.get("code")
 
@@ -132,20 +143,38 @@ if not st.session_state.user_email:
                     st.error("❌ Email nahi mila.")
             else:
                 st.error("⚠️ Login Failed.")
-                # Debugging ke liye error print kar raha hoon
                 st.write("Google Error:", token_response.json())
-                st.write(f"Sent Redirect URI: `{REDIRECT_URI}`")
+                st.write(f"Check REDIRECT_URI config. Code sent: `{REDIRECT_URI}`")
                 st.stop()
         except Exception as e:
             st.error(f"Error: {e}")
             st.stop()
     else:
         auth_link = f"{AUTH_URL}?response_type=code&client_id={CLIENT_ID}&redirect_uri={REDIRECT_URI}&scope=openid%20email%20profile&access_type=offline&prompt=consent"
-        st.markdown(f'<a href="{auth_link}" target="_self"><button style="background-color: #4285F4; color: white; padding: 12px 24px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer;">Login with Google</button></a>', unsafe_allow_html=True)
+        
+        st.markdown(f'''
+            <a href="{auth_link}" target="_self">
+                <button style="
+                    background-color: #4285F4; 
+                    color: white; 
+                    padding: 12px 24px; 
+                    border: none; 
+                    border-radius: 4px; 
+                    font-size: 16px; 
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;">
+                    <img src="https://www.google.com/favicon.ico" width="20"/>
+                    Login with Google
+                </button>
+            </a>
+            ''', unsafe_allow_html=True)
+            
     st.stop()
 
 # =========================================================
-# APP CONTENT
+# APP CONTENT (LOGGED IN USER ONLY)
 # =========================================================
 
 user_email = st.session_state.user_email
@@ -154,19 +183,24 @@ username = user_email
 with st.sidebar:
     st.markdown("---")
     st.title("🤖 Jarvis AI")
+    
     if st.button("➕ New Chat", use_container_width=True):
         st.session_state.current_chat = f"Chat_{int(time.time())}.json"
         st.session_state.chat_history = [SystemMessage(content="You are Jarvis.")]
         st.rerun()
 
     st.subheader("📜 Your Chats")
+    
     sessions = backend.get_all_chat_sessions(username)
-    if not sessions: st.info("No chats yet.")
+    if not sessions:
+        st.info("No chats yet.")
+        
     for s in sessions:
         display_name = s.replace(".json", "")
         if "_" in display_name:
             parts = display_name.split("_")
             if parts[-1].isdigit(): display_name = " ".join(parts[:-1])
+        
         col1, col2 = st.columns([0.80, 0.20])
         with col1:
             if st.button(display_name[:15], key=f"load_{s}", use_container_width=True):
@@ -177,9 +211,14 @@ with st.sidebar:
             if st.button("🗑️", key=f"del_{s}"):
                 backend.delete_chat_session(username, s)
                 st.rerun()
+
     st.markdown("---")
     provider = st.radio("Model:", ("Llama-3.3 (Fast) ⚡", "DeepSeek-R1 (Groq) 🧠"))
-    api_key = os.getenv("GROQ_API_KEY")
+    
+    if "GROQ_API_KEY" in st.secrets:
+        api_key = st.secrets["GROQ_API_KEY"]
+    else:
+        api_key = os.getenv("GROQ_API_KEY")
 
 if "current_chat" not in st.session_state:
     st.session_state.current_chat = f"Chat_{int(time.time())}.json"
@@ -203,8 +242,11 @@ if prompt := st.chat_input("Ask Jarvis anything..."):
                 response = llm.invoke(st.session_state.chat_history)
                 ai_msg = response.content
                 st.markdown(ai_msg)
+        
         st.session_state.chat_history.append(AIMessage(content=ai_msg))
+        
         backend.save_chat_session(username, st.session_state.current_chat, st.session_state.chat_history)
+        
         if "Chat_" in st.session_state.current_chat:
             new_name = backend.rename_chat_session(username, st.session_state.current_chat, prompt)
             st.session_state.current_chat = new_name
