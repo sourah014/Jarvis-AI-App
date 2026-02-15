@@ -242,6 +242,7 @@ if prompt := st.chat_input("Ask Jarvis anything..."):
     try:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
+                print("Invoking LLM with history:", st.session_state.chat_history)
                 response = llm.invoke(st.session_state.chat_history)
                 ai_msg = response.content
                 st.markdown(ai_msg)
