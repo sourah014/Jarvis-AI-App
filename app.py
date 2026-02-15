@@ -84,19 +84,14 @@ except Exception:
 
 # --- SMART REDIRECT URI ---
 # Live aur Localhost ke liye URL auto-set
-try:
-    if "localhost" in os.getenv("STREAMLIT_SERVER_ADDRESS", "") or os.getenv("IS_LOCAL", "False") == "True":
-        REDIRECT_URI = "http://localhost:8503"
-    else:
-        # Fallback for Live (Agar environment variable na mile)
-        REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
-except:
-    REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
+# Check if we're on localhost (development)
+is_local = os.getenv("IS_LOCAL", "False").lower() == "true"
 
-# Overwrite for Localhost checking (Manual override)
-# Jab tum local chalaoge, toh .env file me IS_LOCAL=True daal dena
-if os.path.exists(".env"):
-     REDIRECT_URI = "http://localhost:8503"
+if is_local:
+    REDIRECT_URI = "http://localhost:8503"
+else:
+    # For Live (Production on Streamlit Cloud)
+    REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app/"
 
 
 # Google Endpoints
