@@ -66,21 +66,38 @@ if current_session_id and not st.session_state.user_email:
         st.session_state.token = user_data["token"]
 
 # --- GOOGLE AUTH CONFIG (CRASH PROOF) ---
-# Yahan hum try-except use karenge taaki Localhost par 'Secrets Not Found' error na aaye
+# Ye naya logic hai. Ye check karega ki Secrets exist karte hain ya nahi.
 try:
-    # Pehle Secrets (Live) try karo
+    # Hum directly access nahi karenge, pehle check karenge
+    import streamlit.runtime.secrets as secrets_lib
+    # Ye dummy access hai taaki error trigger ho agar file na ho
+    _ = st.secrets["GOOGLE_CLIENT_ID"]
+    
+    # Agar upar error nahi aaya, toh hum Live par hain
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+    
 except Exception:
-    # Agar fail ho (Localhost), toh .env se uthao
+    # Agar koi bhi error aaya (matlab Localhost), toh .env use karo
     CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
 # --- SMART REDIRECT URI ---
-if "localhost" in os.getenv("STREAMLIT_SERVER_ADDRESS", ""):
-    REDIRECT_URI = "http://localhost:8503"
-else:
+# Live aur Localhost ke liye URL auto-set
+try:
+    if "localhost" in os.getenv("STREAMLIT_SERVER_ADDRESS", "") or os.getenv("IS_LOCAL", "False") == "True":
+        REDIRECT_URI = "http://localhost:8503"
+    else:
+        # Fallback for Live (Agar environment variable na mile)
+        REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
+except:
     REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
+
+# Overwrite for Localhost checking (Manual override)
+# Jab tum local chalaoge, toh .env file me IS_LOCAL=True daal dena
+if os.path.exists(".env"):
+     REDIRECT_URI = "http://localhost:8503"
+
 
 # Google Endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -102,10 +119,10 @@ with st.sidebar:
 if not st.session_state.user_email:
     st.title("🤖 Jarvis AI - Secure Access")
     
-    # Debug info (Only visible if something goes wrong)
+    # Debug info
     if "localhost" not in REDIRECT_URI:
-        st.warning(f"🚀 Live Redirect URI: {REDIRECT_URI}")
-        st.info("Note: Agar 403 Error aaye, toh Google Cloud me apna Email 'Test Users' me add karo.")
+         # Sirf Debugging ke liye
+         st.markdown(f"", unsafe_allow_html=True)
 
     query_params = st.query_params
     auth_code = query_params.get("code")
@@ -139,7 +156,8 @@ if not st.session_state.user_email:
                     st.error("❌ Email nahi mila.")
             else:
                 st.error("⚠️ Login Failed.")
-                st.write("Google Error Response:", token_response.json())
+                # Error details print nahi kar rahe taaki user confuse na ho, bas 403 ka pata hai hume
+                st.write("Google se connection fail hua. Refresh karke try karein.")
                 st.stop()
         except Exception as e:
             st.error(f"Error: {e}")
@@ -211,11 +229,12 @@ with st.sidebar:
     provider = st.radio("Model:", ("Llama-3.3 (Fast) ⚡", "DeepSeek-R1 (Groq) 🧠"))
     
     try:
+        # Safe access for API Key
         if "GROQ_API_KEY" in st.secrets:
-            api_key = st.secrets["GROQ_API_KEY"]
+             api_key = st.secrets["GROQ_API_KEY"]
         else:
-            api_key = os.getenv("GROQ_API_KEY")
-    except Exception:
+             api_key = os.getenv("GROQ_API_KEY")
+    except:
         api_key = os.getenv("GROQ_API_KEY")
 
 if "current_chat" not in st.session_state:
