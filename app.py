@@ -65,31 +65,22 @@ if current_session_id and not st.session_state.user_email:
         st.session_state.user_email = user_data["email"]
         st.session_state.token = user_data["token"]
 
-# --- GOOGLE AUTH CONFIG (SAFE MODE) ---
-# Yahan maine try-except lagaya hai taaki Localhost par crash na ho
+# --- GOOGLE AUTH CONFIG (CRASH PROOF) ---
+# Yahan hum try-except use karenge taaki Localhost par 'Secrets Not Found' error na aaye
 try:
+    # Pehle Secrets (Live) try karo
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
 except Exception:
-    # Agar Secrets nahi mile (Localhost), toh .env se uthao
+    # Agar fail ho (Localhost), toh .env se uthao
     CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# --- SMART REDIRECT URI (FINAL & SIMPLE) ---
-# Logic: Hum check karenge ki kya hum Cloud par hain?
-# Agar 'STREAMLIT_SERVER_Address' environment variable nahi milta, toh hum Cloud par hain.
-
+# --- SMART REDIRECT URI ---
 if "localhost" in os.getenv("STREAMLIT_SERVER_ADDRESS", ""):
-     # Hum Localhost par hain
     REDIRECT_URI = "http://localhost:8503"
 else:
-    # Hum Live Streamlit Cloud par hain (YAHAN APNA LINK CHECK KAR LENA)
     REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
-
-# ================= DEBUGGING BOX (LIVE CHECK) =================
-# Ye box tujhe Live App par dikhega. Agar yahan URL sahi hai, toh galti Google Settings mein hai.
-st.warning(f"🚀 Sending Redirect URI to Google: {REDIRECT_URI}")
-# ==============================================================
 
 # Google Endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -111,13 +102,10 @@ with st.sidebar:
 if not st.session_state.user_email:
     st.title("🤖 Jarvis AI - Secure Access")
     
-    # ================= DEBUGGING BOX (START) =================
-    # Ye box sirf tab dikhega jab zaroorat ho, Live par check karne ke liye
-    if "localhost" not in REDIRECT_URI: 
-        st.error("🛑 DEBUG MODE (LIVE)")
-        st.code(f"REDIRECT_URI = {REDIRECT_URI}")
-        st.info("Agar 403 aa raha hai, toh Google Cloud me 'Testing' mode on karo.")
-    # =========================================================
+    # Debug info (Only visible if something goes wrong)
+    if "localhost" not in REDIRECT_URI:
+        st.warning(f"🚀 Live Redirect URI: {REDIRECT_URI}")
+        st.info("Note: Agar 403 Error aaye, toh Google Cloud me apna Email 'Test Users' me add karo.")
 
     query_params = st.query_params
     auth_code = query_params.get("code")
@@ -152,7 +140,6 @@ if not st.session_state.user_email:
             else:
                 st.error("⚠️ Login Failed.")
                 st.write("Google Error Response:", token_response.json())
-                st.write(f"Code sent Redirect URI: `{REDIRECT_URI}`")
                 st.stop()
         except Exception as e:
             st.error(f"Error: {e}")
@@ -223,7 +210,6 @@ with st.sidebar:
     st.markdown("---")
     provider = st.radio("Model:", ("Llama-3.3 (Fast) ⚡", "DeepSeek-R1 (Groq) 🧠"))
     
-    # Safe API Key Load
     try:
         if "GROQ_API_KEY" in st.secrets:
             api_key = st.secrets["GROQ_API_KEY"]
@@ -251,7 +237,6 @@ if prompt := st.chat_input("Ask Jarvis anything..."):
     try:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                print("Invoking LLM with history:", st.session_state.chat_history)
                 response = llm.invoke(st.session_state.chat_history)
                 ai_msg = response.content
                 st.markdown(ai_msg)
