@@ -75,12 +75,21 @@ except Exception:
     CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
-# --- SMART REDIRECT URI ---
-try:
-    REDIRECT_URI = st.secrets["REDIRECT_URI"]
-except Exception:
-    # Agar Secrets nahi mile (Localhost), toh Localhost use karo
+# --- SMART REDIRECT URI (FINAL & SIMPLE) ---
+# Logic: Hum check karenge ki kya hum Cloud par hain?
+# Agar 'STREAMLIT_SERVER_Address' environment variable nahi milta, toh hum Cloud par hain.
+
+if "localhost" in os.getenv("STREAMLIT_SERVER_ADDRESS", ""):
+     # Hum Localhost par hain
     REDIRECT_URI = "http://localhost:8503"
+else:
+    # Hum Live Streamlit Cloud par hain (YAHAN APNA LINK CHECK KAR LENA)
+    REDIRECT_URI = "https://jarvis-ai-app-fojtmu3wvxgbxwvfnvjvzk.streamlit.app"
+
+# ================= DEBUGGING BOX (LIVE CHECK) =================
+# Ye box tujhe Live App par dikhega. Agar yahan URL sahi hai, toh galti Google Settings mein hai.
+st.warning(f"🚀 Sending Redirect URI to Google: {REDIRECT_URI}")
+# ==============================================================
 
 # Google Endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
